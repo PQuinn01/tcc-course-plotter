@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenSeaMap Plotter + Custom Hazard Sketcher</title>
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Leaflet.draw CSS & JS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { display: flex; height: 100vh; font-family: system-ui, -apple-system, sans-serif; }
+    #sidebar { width: 380px; background: #0f172a; color: #f8fafc; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
+    #map { flex: 1; }
+    h2 { font-size: 1.2rem; color: #38bdf8; }
+    h3 { font-size: 0.95rem; color: #94a3b8; margin-top: 0.25rem; border-bottom: 1px solid #334155; padding-bottom: 0.2rem; }
+    .btn-group { display: flex; gap: 0.5rem; }
+    button, label.btn-label { flex: 1; padding: 0.5rem; border: none; border-radius: 4px; background: #0284c7; color: white; cursor: pointer; font-weight: 600; text-align: center; font-size: 0.85rem; }
+    button:hover, label.btn-label:hover { background: #0369a1; }
+    button.secondary { background: #334155; }
+    button.secondary:hover { background: #475569; }
+    button.success { background: #16a34a; }
+    button.success:hover { background: #15803d; }
+    button.danger { background: #ef4444; }
+    button.danger:hover { background: #dc2626; }
+    .panel { background: #1e293b; padding: 0.75rem; border-radius: 6px; display: flex; flex-direction: column; gap: 0.4rem; }
+    .panel p { font-size: 0.85rem; }
+    .panel span { color: #38bdf8; font-weight: bold; }
+    .input-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; }
+    .input-row input { width: 110px; padding: 0.25rem 0.4rem; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 4px; text-align: right; }
+    .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; }
+    .checkbox-row input { cursor: pointer; }
+    .waypoint-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+    .waypoint-item { background: #1e293b; padding: 0.65rem; border-radius: 4px; font-size: 0.85rem; border-left: 3px solid #38bdf8; }
+    .coord-primary { font-family: monospace; font-size: 0.9rem; color: #38bdf8; font-weight: bold; margin-top: 0.2rem; }
+    .coord-secondary { font-family: monospace; font-size: 0.78rem; color: #94a3b8; }
+    .leg-details { background: #0f172a; padding: 0.4rem; border-radius: 4px; margin-top: 0.4rem; font-size: 0.8rem; line-height: 1.3; }
+    .warning-badge { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-top: 0.4rem; font-weight: bold; display: flex; align-items: center; gap: 0.3rem; }
+    .waypoint-item button { padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-top: 0.4rem; width: 100%; }
+    .draw-instruction { font-size: 0.78rem; color: #94a3b8; line-height: 1.3; margin-top: 0.2rem; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+
+  <div id="sidebar">
+    <h2>Course Plotter & Navigation</h2>
+    
+    <!-- Route Telemetry -->
+    <div class="panel">
+      <p>Total Distance: <span id="total-dist">0.00 NM</span></p>
+      <p>Est. Total Time: <span id="total-time">0h 0m</span></p>
+    </div>
+
+    <!-- Passage Plan Generator Button -->
+    <button class="success" onclick="generatePassagePlan()">📄 Print Passage Plan Sheet</button>
+
+    <!-- Map Layers & Safety Controls -->
+    <h3>Map Warning Overlays</h3>
+    <div class="panel">
+      <label class="checkbox-row">
+        <input type="checkbox" id="toggle-shipping" checked onchange="toggleOverlays()" />
+        Show Shipping Lanes (TSS)
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="toggle-hazards" checked onchange="toggleOverlays()" />
+        Show Preset Hazard Zones
+      </label>
+      <p class="draw-instruction">💡 <strong>Sketch Hazards:</strong> Use the polygon/rectangle draw tools in the top-left map toolbar to sketch custom hazard zones.</p>
+    </div>
+
+    <!-- Manual Coordinates Input -->
+    <h3>Add Waypoint Manually</h3>
+    <div class="panel">
+      <div class="input-row">
+        <label for="manual-lat">Latitude (°):</label>
+        <input type="number" id="manual-lat" placeholder="e.g. 50.75" step="any" min="-90" max="90" />
+      </div>
+      <div class="input-row">
+        <label for="manual-lng">Longitude (°):</label>
+        <input type="number" id="manual-lng" placeholder="e.g. -1.30" step="any" min="-180" max="180" />
+      </div>
+      <button style="margin-top:0.3rem;" onclick="addManualWaypoint()">Add Coordinate to Route</button>
+    </div>
+
+    <!-- Vessel & Tidal Setup -->
+    <h3>Vessel & Current Parameters</h3>
+    <div class="panel">
+      <div class="input-row">
+        <label for="stw">Boat Speed (STW):</label>
+        <div><input type="number" id="stw" value="6.0" step="0.5" style="width:70px;" onchange="updateRoute()" /> kn</div>
+      </div>
+      <div class="input-row">
+        <label for="set-dir">Tide Set (Direction):</label>
+        <div><input type="number" id="set-dir" value="090" min="0" max="359" style="width:70px;" onchange="updateRoute()" /> °T</div>
+      </div>
+      <div class="input-row">
+        <label for="drift-spd">Tide Drift (Speed):</label>
+        <div><input type="number" id="drift-spd" value="1.5" step="0.1" style="width:70px;" onchange="updateRoute()" /> kn</div>
+      </div>
+    </div>
+
+    <!-- GPX Controls -->
+    <h3>GPX Files & Controls</h3>
+    <div class="btn-group">
+      <label class="btn-label" for="gpx-file">Import GPX</label>
+      <input type="file" id="gpx-file" accept=".gpx" onchange="importGPX(event)" />
+      <button onclick="exportGPX()">Export GPX</button>
+    </div>
+
+    <div class="btn-group">
+      <button class="secondary" onclick="undoLast()">Undo</button>
+      <button class="danger" onclick="clearAll()">Clear All</button>
+    </div>
+
+    <h3>Waypoints (Lat / Long)</h3>
+    <ul id="waypoint-list" class="waypoint-list"></ul>
+  </div>
+
+  <div id="map"></div>
+
+  <script>
+    const map = L.map('map').setView([50.7, -1.3], 10);
+
+    // OpenStreetMap & OpenSeaMap Layers
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
+    L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenSeaMap' }).addTo(map);
+
+    let markers = [];
+    let polyline = L.polyline([], { color: '#0284c7', weight: 4, dashArray: '6, 8' }).addTo(map);
+
+    // Feature group to hold custom drawn hazard polygons
+    const drawnHazardsGroup = new L.FeatureGroup().addTo(map);
+
+    // Initialize Leaflet.draw controls
+    const drawControl = new L.Control.Draw({
+      position: 'topleft',
+      draw: {
+        polygon: {
+          shapeOptions: { color: '#ef4444', fillColor: '#f87171', fillOpacity: 0.45, weight: 2 }
+        },
+        rectangle: {
+          shapeOptions: { color: '#ef4444', fillColor: '#f87171', fillOpacity: 0.45, weight: 2 }
+        },
+        polyline: false,
+        circle: false,
+        circlemarker: false,
+        marker: false
+      },
+      edit: {
+        featureGroup: drawnHazardsGroup,
+        remove: true
+      }
+    });
+    map.addControl(drawControl);
+
+    let customHazardCount = 1;
+
+    // Handle creation of custom drawn hazards
+    map.on(L.Draw.Event.CREATED, function (e) {
+      const layer = e.layer;
+      const defaultName = `Custom Hazard #${customHazardCount++}`;
+      const userHazardName = prompt("Enter a name for this custom hazard zone:", defaultName) || defaultName;
+      
+      layer.hazardName = userHazardName;
+      layer.bindTooltip(`<b>⛔ HAZARD: ${userHazardName}</b>`, { sticky: true });
+      drawnHazardsGroup.addLayer(layer);
+      updateRoute();
+    });
+
+    map.on(L.Draw.Event.EDITED, updateRoute);
+    map.on(L.Draw.Event.DELETED, updateRoute);
+
+    // Define Preset Shipping Lanes & Hazard Zones
+    const shippingLanesData = [
+      {
+        name: "Solent Deep Water Channel / TSS",
+        coords: [
+          [50.74, -1.38],
+          [50.72, -1.30],
+          [50.68, -1.15],
+          [50.65, -1.15],
+          [50.70, -1.32],
+          [50.72, -1.40]
+        ]
+      }
+    ];
+
+    const hazardZonesData = [
+      {
+        name: "Ryde Middle Shoal (Shallow Depth < 3m)",
+        coords: [
+          [50.76, -1.25],
+          [50.77, -1.21],
+          [50.75, -1.19],
+          [50.74, -1.23]
+        ]
+      },
+      {
+        name: "Bramble Bank Hazard Area",
+        coords: [
+          [50.79, -1.32],
+          [50.80, -1.28],
+          [50.78, -1.27],
+          [50.77, -1.31]
+        ]
+      }
+    ];
+
+    let shippingLayerGroup = L.layerGroup().addTo(map);
+    let presetHazardLayerGroup = L.layerGroup().addTo(map);
+
+    // Render Preset Polygons
+    shippingLanesData.forEach(lane => {
+      L.polygon(lane.coords, {
+        color: '#a855f7',
+        fillColor: '#c084fc',
+        fillOpacity: 0.3,
+        weight: 2,
+        dashArray: '4, 4'
+      }).bindTooltip(`<b>⚠️ ${lane.name}</b>`, { sticky: true }).addTo(shippingLayerGroup);
+    });
+
+    hazardZonesData.forEach(hz => {
+      L.polygon(hz.coords, {
+        color: '#ef4444',
+        fillColor: '#f87171',
+        fillOpacity: 0.4,
+        weight: 2
+      }).bindTooltip(`<b>⛔ HAZARD: ${hz.name}</b>`, { sticky: true }).addTo(presetHazardLayerGroup);
+    });
+
+    function toggleOverlays() {
+      const showShipping = document.getElementById('toggle-shipping').checked;
+      const showHazards = document.getElementById('toggle-hazards').checked;
+
+      if (showShipping) map.addLayer(shippingLayerGroup); else map.removeLayer(shippingLayerGroup);
+      if (showHazards) map.addLayer(presetHazardLayerGroup); else map.removeLayer(presetHazardLayerGroup);
+    }
+
+    // Line intersection geometry check
+    function linesIntersect(p1, p2, p3, p4) {
+      function ccw(A, B, C) {
+        return (C.lat - A.lat) * (B.lng - A.lng) > (B.lat - A.lat) * (C.lng - A.lng);
+      }
+      return (ccw(p1, p3, p4) !== ccw(p2, p3, p4)) && (ccw(p1, p2, p3) !== ccw(p1, p2, p4));
+    }
+
+    function checkSegmentIntersection(p1, p2, polygonCoords) {
+      for (let i = 0; i < polygonCoords.length; i++) {
+        const p3 = { lat: polygonCoords[i][0], lng: polygonCoords[i][1] };
+        const nextIdx = (i + 1) % polygonCoords.length;
+        const p4 = { lat: polygonCoords[nextIdx][0], lng: polygonCoords[nextIdx][1] };
+
+        if (linesIntersect(p1, p2, p3, p4)) return true;
+      }
+      return false;
+    }
+
+    // Extract coordinate pairs from Leaflet.draw layer
+    function getLayerCoords(layer) {
+      let latLngs = layer.getLatLngs();
+      if (Array.isArray(latLngs[0])) latLngs = latLngs[0];
+      return latLngs.map(ll => [ll.lat, ll.lng]);
+    }
+
+    // Evaluate leg intersections against preset & custom hazard zones
+    function getLegWarnings(p1, p2) {
+      let warnings = [];
+
+      // Check Shipping Lanes
+      if (document.getElementById('toggle-shipping').checked) {
+        shippingLanesData.forEach(lane => {
+          if (checkSegmentIntersection(p1, p2, lane.coords)) {
+            warnings.push(`Crosses ${lane.name}`);
+          }
+        });
+      }
+
+      // Check Preset Hazards
+      if (document.getElementById('toggle-hazards').checked) {
+        hazardZonesData.forEach(hz => {
+          if (checkSegmentIntersection(p1, p2, hz.coords)) {
+            warnings.push(`CAUTION: Enters ${hz.name}`);
+          }
+        });
+      }
+
+      // Check Custom Drawn Hazards
+      drawnHazardsGroup.eachLayer(layer => {
+        const coords = getLayerCoords(layer);
+        if (coords.length >= 3 && checkSegmentIntersection(p1, p2, coords)) {
+          warnings.push(`CAUTION: Enters ${layer.hazardName || 'Custom Hazard Area'}`);
+        }
+      });
+
+      return warnings;
+    }
+
+    function toDDM(lat, lng) {
+      const latNs = lat >= 0 ? 'N' : 'S';
+      const absLat = Math.abs(lat);
+      const latDeg = Math.floor(absLat);
+      const latMin = ((absLat - latDeg) * 60).toFixed(3);
+
+      const lngEw = lng >= 0 ? 'E' : 'W';
+      const absLng = Math.abs(lng);
+      const lngDeg = Math.floor(absLng);
+      const lngMin = ((absLng - lngDeg) * 60).toFixed(3);
+
+      const latStr = `${String(latDeg).padStart(2, '0')}° ${String(latMin).padStart(6, '0')}' ${latNs}`;
+      const lngStr = `${String(lngDeg).padStart(3, '0')}° ${String(lngMin).padStart(6, '0')}' ${lngEw}`;
+
+      return { ddm: `${latStr} | ${lngStr}`, latStr, lngStr };
+    }
+
+    function calcDistanceNM(lat1, lon1, lat2, lon2) {
+      const R = 3440.065;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function calcBearing(lat1, lon1, lat2, lon2) {
+      const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const y = Math.sin(Δλ) * Math.cos(φ2);
+      const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+
+    function calcCTS(track, stw, setDir, drift) {
+      if (stw <= 0) return { cts: track, sog: 0 };
+      const trackRad = track * Math.PI / 180;
+      const setRad = setDir * Math.PI / 180;
+      const angle = setRad - trackRad;
+      const sinDriftAngle = (drift * Math.sin(angle)) / stw;
+
+      if (Math.abs(sinDriftAngle) > 1) return { cts: track, sog: 0 };
+
+      const driftAngle = Math.asin(sinDriftAngle);
+      const cts = ((trackRad - driftAngle) * 180 / Math.PI + 360) % 360;
+      const sog = stw * Math.cos(driftAngle) + drift * Math.cos(angle);
+
+      return { cts, sog: Math.max(0, sog) };
+    }
+
+    function addWaypoint(lat, lng) {
+      const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+      marker.on('drag', updateRoute);
+      markers.push(marker);
+      updateRoute();
+    }
+
+    function addManualWaypoint() {
+      const latInput = document.getElementById('manual-lat');
+      const lngInput = document.getElementById('manual-lng');
+      const lat = parseFloat(latInput.value);
+      const lng = parseFloat(lngInput.value);
+
+      if (isNaN(lat) || lat < -90 || lat > 90) return alert('Enter valid Latitude (-90 to 90).');
+      if (isNaN(lng) || lng < -180 || lng > 180) return alert('Enter valid Longitude (-180 to 180).');
+
+      addWaypoint(lat, lng);
+      map.panTo([lat, lng]);
+      latInput.value = '';
+      lngInput.value = '';
+    }
+
+    function updateRoute() {
+      const coords = markers.map(m => m.getLatLng());
+      polyline.setLatLngs(coords);
+
+      const stw = parseFloat(document.getElementById('stw').value) || 6.0;
+      const setDir = parseFloat(document.getElementById('set-dir').value) || 0;
+      const driftSpd = parseFloat(document.getElementById('drift-spd').value) || 0;
+
+      let totalDist = 0;
+      let totalTimeHours = 0;
+      const listEl = document.getElementById('waypoint-list');
+      listEl.innerHTML = '';
+
+      coords.forEach((pt, i) => {
+        const { ddm, latStr, lngStr } = toDDM(pt.lat, pt.lng);
+        const decDeg = `${pt.lat.toFixed(5)}°, ${pt.lng.toFixed(5)}°`;
+
+        markers[i].bindTooltip(
+          `<b>WP${i + 1}</b><br>${latStr}<br>${lngStr}`,
+          { permanent: true, direction: 'top', offset: [0, -10] }
+        );
+
+        let legInfo = '';
+        let warningHtml = '';
+
+        if (i > 0) {
+          const prev = coords[i - 1];
+          const dist = calcDistanceNM(prev.lat, prev.lng, pt.lat, pt.lng);
+          const track = calcBearing(prev.lat, prev.lng, pt.lat, pt.lng);
+          
+          const { cts, sog } = calcCTS(track, stw, setDir, driftSpd);
+          const legTime = sog > 0 ? (dist / sog) : 0;
+
+          totalDist += dist;
+          totalTimeHours += legTime;
+
+          const warnings = getLegWarnings(prev, pt);
+          if (warnings.length > 0) {
+            warningHtml = warnings.map(w => `<div class="warning-badge">⚠️ ${w}</div>`).join('');
+          }
+
+          legInfo = `
+            <div class="leg-details">
+              Dist: <b>${dist.toFixed(2)} NM</b> | Track: <b>${Math.round(track)}°T</b><br>
+              CTS: <span style="color:#38bdf8">${Math.round(cts)}°T</span> | SOG: <b>${sog.toFixed(1)} kn</b>
+            </div>
+          `;
+        }
+
+        const li = document.createElement('li');
+        li.className = 'waypoint-item';
+        li.innerHTML = `
+          <strong>WP${i + 1}</strong>
+          <div class="coord-primary">${ddm}</div>
+          <div class="coord-secondary">Dec: ${decDeg}</div>
+          ${legInfo}
+          ${warningHtml}
+          <button class="secondary" onclick="fetchLiveTide(${pt.lat}, ${pt.lng}, ${i})">Fetch Live Currents</button>
+        `;
+        listEl.appendChild(li);
+      });
+
+      document.getElementById('total-dist').innerText = `${totalDist.toFixed(2)} NM`;
+      const h = Math.floor(totalTimeHours);
+      const m = Math.round((totalTimeHours - h) * 60);
+      document.getElementById('total-time').innerText = `${h}h ${m}m`;
+    }
+
+    function generatePassagePlan() {
+      if (markers.length === 0) return alert("Plot at least two waypoints before generating a passage plan.");
+
+      const stw = parseFloat(document.getElementById('stw').value) || 6.0;
+      const setDir = parseFloat(document.getElementById('set-dir').value) || 0;
+      const driftSpd = parseFloat(document.getElementById('drift-spd').value) || 0;
+      const coords = markers.map(m => m.getLatLng());
+
+      let rowsHtml = '';
+      let totalDist = 0;
+      let totalTimeHours = 0;
+
+      coords.forEach((pt, i) => {
+        const { ddm } = toDDM(pt.lat, pt.lng);
+        let distStr = '-', trackStr = '-', ctsStr = '-', sogStr = '-', durationStr = '-', cumDistStr = '0.00 NM';
+        let notesStr = '';
+
+        if (i > 0) {
+          const prev = coords[i - 1];
+          const dist = calcDistanceNM(prev.lat, prev.lng, pt.lat, pt.lng);
+          const track = calcBearing(prev.lat, prev.lng, pt.lat, pt.lng);
+          const { cts, sog } = calcCTS(track, stw, setDir, driftSpd);
+          const legTime = sog > 0 ? (dist / sog) : 0;
+
+          totalDist += dist;
+          totalTimeHours += legTime;
+
+          const h = Math.floor(legTime);
+          const m = Math.round((legTime - h) * 60);
+
+          distStr = `${dist.toFixed(2)} NM`;
+          trackStr = `${Math.round(track)}°T`;
+          ctsStr = `${Math.round(cts)}°T`;
+          sogStr = `${sog.toFixed(1)} kn`;
+          durationStr = `${h}h ${m}m`;
+          cumDistStr = `${totalDist.toFixed(2)} NM`;
+
+          const warnings = getLegWarnings(prev, pt);
+          if (warnings.length > 0) {
+            notesStr = `<strong style="color:#dc2626;">⚠️ WARNING:</strong> ${warnings.join('; ')}`;
+          }
+        }
+
+        rowsHtml += `
+          <tr>
+            <td style="text-align:center;"><strong>WP${i + 1}</strong></td>
+            <td style="font-family:monospace;">${ddm}</td>
+            <td style="text-align:center;">${distStr}</td>
+            <td style="text-align:center;">${trackStr}</td>
+            <td style="text-align:center; font-weight:bold;">${ctsStr}</td>
+            <td style="text-align:center;">${sogStr}</td>
+            <td style="text-align:center;">${durationStr}</td>
+            <td style="text-align:center;">${cumDistStr}</td>
+            <td style="width:25%;">${notesStr}</td>
+          </tr>
+        `;
+      });
+
+      const totH = Math.floor(totalTimeHours);
+      const totM = Math.round((totalTimeHours - totH) * 60);
+
+      const planHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Passage Plan Sheet</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; color: #000; background: #fff; }
+            h1 { font-size: 18pt; margin-bottom: 4px; border-bottom: 2px solid #000; padding-bottom: 4px; }
+            .meta-box { display: flex; justify-content: space-between; margin-bottom: 15px; padding: 10px; border: 1px solid #000; font-size: 10pt; line-height: 1.4; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 9.5pt; }
+            th, td { border: 1px solid #000; padding: 6px 8px; text-align: left; }
+            th { background-color: #e5e7eb; font-weight: bold; text-align: center; }
+            .btn-print { padding: 8px 16px; font-size: 11pt; font-weight: bold; cursor: pointer; background: #0284c7; color: #fff; border: none; border-radius: 4px; margin-bottom: 15px; }
+            @media print { .btn-print { display: none; } }
+          </style>
+        </head>
+        <body>
+          <button class="btn-print" onclick="window.print()">🖨️ Print Passage Plan</button>
+          <h1>PASSAGE PLAN & NAVIGATIONAL LOG SHEET</h1>
+          <div class="meta-box">
+            <div>
+              <p><strong>Date Plotted:</strong> ${new Date().toLocaleDateString()}</p>
+              <p><strong>Assumed STW:</strong> ${stw} knots</p>
+            </div>
+            <div>
+              <p><strong>Tidal Stream (Set/Drift):</strong> ${setDir}°T @ ${driftSpd} knots</p>
+              <p><strong>Total Distance:</strong> ${totalDist.toFixed(2)} NM</p>
+            </div>
+            <div>
+              <p><strong>Total Est. Passage Time:</strong> ${totH} hours ${totM} mins</p>
+              <p><strong>Total Waypoints:</strong> ${coords.length}</p>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>WP</th>
+                <th>Position (DD° MM.mmm')</th>
+                <th>Leg Dist</th>
+                <th>Track</th>
+                <th>CTS</th>
+                <th>SOG</th>
+                <th>Leg Time</th>
+                <th>Cum. Dist</th>
+                <th>Visual Aids / Hazards / Watch Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const win = window.open('', '_blank');
+      win.document.write(planHtml);
+      win.document.close();
+    }
+
+    async function fetchLiveTide(lat, lng, idx) {
+      try {
+        const res = await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=ocean_current_velocity,ocean_current_direction`);
+        const data = await res.json();
+        if (data && data.hourly) {
+          const velKnots = ( (data.hourly.ocean_current_velocity[0] || 0) * 1.94384 ).toFixed(1);
+          const dir = Math.round(data.hourly.ocean_current_direction[0] || 0);
+
+          document.getElementById('set-dir').value = dir;
+          document.getElementById('drift-spd').value = velKnots;
+          updateRoute();
+          alert(`Updated Tide for WP${idx + 1}:\nSet: ${dir}°T\nDrift: ${velKnots} knots`);
+        }
+      } catch (err) {
+        alert("Unable to fetch live current data for this location.");
+      }
+    }
+
+    function undoLast() {
+      if (markers.length === 0) return;
+      map.removeLayer(markers.pop());
+      updateRoute();
+    }
+
+    function clearAll() {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+      updateRoute();
+    }
+
+    function exportGPX() {
+      if (markers.length === 0) return alert("Plot waypoints before exporting.");
+      let gpx = `<?xml version="1.0"?><gpx version="1.1" creator="OpenSeaMap Plotter"><rte><name>Marine Course</name>`;
+      markers.forEach((m, idx) => {
+        const { lat, lng } = m.getLatLng();
+        const { latStr, lngStr } = toDDM(lat, lng);
+        gpx += `<rtept lat="${lat}" lon="${lng}"><name>WP${idx + 1}</name><cmt>${latStr} ${lngStr}</cmt></rtept>`;
+      });
+      gpx += `</rte></gpx>`;
+
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
+      a.download = `marine_route.gpx`;
+      a.click();
+    }
+
+    function importGPX(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
+        const points = xmlDoc.querySelectorAll("rtept, trkpt, wpt");
+        if (!points.length) return alert("No valid points found in GPX.");
+        clearAll();
+        const bounds = [];
+        points.forEach(pt => {
+          const lat = parseFloat(pt.getAttribute("lat"));
+          const lng = parseFloat(pt.getAttribute("lon"));
+          if (!isNaN(lat) && !isNaN(lng)) {
+            addWaypoint(lat, lng);
+            bounds.push([lat, lng]);
+          }
+        });
+        if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
+      };
+      reader.readAsText(file);
+    }
+
+    // Map click adds route waypoints when not drawing
+    map.on('click', (e) => {
+      addWaypoint(e.latlng.lat, e.latlng.lng);
+    });
+  </script>
+</body>
+</html>
