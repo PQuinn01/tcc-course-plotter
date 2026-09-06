@@ -104,6 +104,18 @@
     <!-- Passage Plan Generator Button -->
     <button class="success btn-sm" onclick="generatePassagePlan()">📄 Print Passage Plan</button>
 
+    <!-- AIS Live Target Monitor -->
+    <h3>📡 AIS Target Traffic</h3>
+    <div class="panel">
+      <label class="checkbox-row">
+        <input type="checkbox" id="toggle-ais" checked onchange="toggleAIS()" />
+        Show AIS Vessel Targets
+      </label>
+      <p style="font-size:0.8rem; margin-top:0.2rem;">Active Targets: <span id="ais-count">0</span></p>
+      <div id="ais-collision-alert"></div>
+      <div id="ais-target-list" style="max-height: 120px; overflow-y: auto; margin-top: 0.4rem; font-size: 0.78rem;"></div>
+    </div>
+
     <!-- Map Layers & Safety Controls -->
     <h3>Map Warning Overlays</h3>
     <div class="panel">
