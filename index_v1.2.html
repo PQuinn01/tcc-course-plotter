@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OpenSeaMap Plotter + Firth of Clyde Nautical Hazards</title>
+  <title>OpenSeaMap Plotter + Custom Hazard Sketcher</title>
   
   <!-- Leaflet CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -72,11 +72,6 @@
       border-color: #ef4444;
       color: #fca5a5;
     }
-
-    /* Ship Marker Icon Rotation */
-    .ship-icon-container {
-      transition: transform 0.3s ease-out;
-    }
   </style>
 </head>
 <body>
@@ -84,52 +79,29 @@
   <div id="sidebar">
     <h2>Course Plotter & Navigation</h2>
     
-    <!-- GPS Telemetry -->
-    <h3>Live GPS Position</h3>
-    <div class="panel">
-      <p>Position: <span id="gps-pos">Waiting for fix...</span></p>
-      <p>SOG: <span id="gps-sog">0.0 kn</span> | COG: <span id="gps-cog">0°T</span></p>
-      <div class="btn-group" style="margin-top:0.4rem;">
-        <button class="success btn-sm" onclick="toggleGPS()" id="gps-toggle-btn">🟢 Start GPS Tracking</button>
-        <button class="secondary btn-sm" onclick="centerOnShip()">🎯 Center Map</button>
-      </div>
-    </div>
-
     <!-- Route Telemetry -->
     <div class="panel">
       <p>Total Distance: <span id="total-dist">0.00 NM</span></p>
       <p>Est. Total Time: <span id="total-time">0h 0m</span></p>
     </div>
 
-    <!-- Passage Plan Generator Button -->
+    <!-- Passage Plan Generator Button (Made Smaller) -->
     <button class="success btn-sm" onclick="generatePassagePlan()">📄 Print Passage Plan</button>
-
-    <!-- AIS Live Target Monitor -->
-    <h3>📡 AIS Target Traffic</h3>
-    <div class="panel">
-      <label class="checkbox-row">
-        <input type="checkbox" id="toggle-ais" checked onchange="toggleAIS()" />
-        Show AIS Vessel Targets
-      </label>
-      <p style="font-size:0.8rem; margin-top:0.2rem;">Active Targets: <span id="ais-count">0</span></p>
-      <div id="ais-collision-alert"></div>
-      <div id="ais-target-list" style="max-height: 120px; overflow-y: auto; margin-top: 0.4rem; font-size: 0.78rem;"></div>
-    </div>
 
     <!-- Map Layers & Safety Controls -->
     <h3>Map Warning Overlays</h3>
     <div class="panel">
       <label class="checkbox-row">
         <input type="checkbox" id="toggle-shipping" checked onchange="toggleOverlays()" />
-        Show Shipping Lanes (TSS & Channels)
+        Show Shipping Lanes (TSS)
       </label>
       <label class="checkbox-row">
         <input type="checkbox" id="toggle-hazards" checked onchange="toggleOverlays()" />
-        Show Firth of Clyde Hazards & Reefs
+        Show Preset Hazard Zones
       </label>
       <label class="checkbox-row">
         <input type="checkbox" id="toggle-depths" checked onchange="toggleOverlays()" />
-        Show Soundings & Depth Contours
+        Show Firth of Clyde Soundings
       </label>
       <p class="draw-instruction">💡 <strong>Sketch Hazards:</strong> Use the polygon/rectangle draw tools in the top-left map toolbar to sketch custom hazard zones.</p>
     </div>
@@ -151,10 +123,6 @@
     <!-- Vessel & Tidal Setup -->
     <h3>Vessel & Current Parameters</h3>
     <div class="panel">
-      <div class="input-row">
-        <label for="start-time">Start Time (ETD):</label>
-        <input type="time" id="start-time" value="08:00" onchange="updateRoute()" />
-      </div>
       <div class="input-row">
         <label for="stw">Boat Speed (STW):</label>
         <div><input type="number" id="stw" value="6.0" step="0.5" style="width:70px;" onchange="updateRoute()" /> kn</div>
@@ -199,110 +167,6 @@
     let markers = [];
     let polyline = L.polyline([], { color: '#0284c7', weight: 4, dashArray: '6, 8' }).addTo(map);
 
-    // GPS & Live Ship Position State
-    let watchId = null;
-    let isTrackingGPS = false;
-    let shipMarker = null;
-    let lastLat = null;
-    let lastLng = null;
-
-    // Create custom SVG ship icon
-// Custom SVG ship icon with Port (Red/Left) and Starboard (Green/Right) hull styling
-    const shipSvgHtml = `
-      <div class="ship-icon-container" id="ship-svg-wrapper" style="transform: rotate(0deg);">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- Port Side (Red - Left) -->
-          <path d="M12 2 C12 2 4 9 4 17 C4 18.5 7 20 12 20 Z" fill="#ef4444" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/>
-          <!-- Starboard Side (Green - Right) -->
-          <path d="M12 2 C12 2 20 9 20 17 C20 18.5 17 20 12 20 Z" fill="#22c55e" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/>
-          <!-- Centerline / Keel Line -->
-          <line x1="12" y1="2" x2="12" y2="20" stroke="#ffffff" stroke-width="1"/>
-        </svg>
-      </div>
-    `;
-    const shipIcon = L.divIcon({
-      className: '',
-      html: shipSvgHtml,
-      iconSize: [36, 36],
-      iconAnchor: [18, 18]
-    });
-
-    function toggleGPS() {
-      const btn = document.getElementById('gps-toggle-btn');
-      if (!isTrackingGPS) {
-        if (!navigator.geolocation) {
-          alert("Geolocation is not supported by your browser.");
-          return;
-        }
-        btn.innerText = "🔴 Stop GPS Tracking";
-        btn.style.background = "#dc2626";
-        isTrackingGPS = true;
-
-        watchId = navigator.geolocation.watchPosition(
-          position => updateShipPosition(position),
-          error => {
-            console.error(error);
-            alert("Error obtaining GPS position: " + error.message);
-          },
-          { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
-        );
-      } else {
-        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-        btn.innerText = "🟢 Start GPS Tracking";
-        btn.style.background = "#16a34a";
-        isTrackingGPS = false;
-        if (shipMarker) {
-          map.removeLayer(shipMarker);
-          shipMarker = null;
-        }
-        document.getElementById('gps-pos').innerText = "Tracking stopped";
-        document.getElementById('gps-sog').innerText = "0.0 kn";
-        document.getElementById('gps-cog').innerText = "0°T";
-      }
-    }
-
-    function updateShipPosition(position) {
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-      const speedMs = position.coords.speed; // meters per second
-      const speedKnots = speedMs !== null ? (speedMs * 1.94384).toFixed(1) : '0.0';
-      const heading = position.coords.heading !== null ? position.coords.heading : 0;
-
-      const { ddm } = toDDM(lat, lng);
-      document.getElementById('gps-pos').innerText = ddm;
-      document.getElementById('gps-sog').innerText = `${speedKnots} kn`;
-      document.getElementById('gps-cog').innerText = `${Math.round(heading)}°T`;
-
-      if (!shipMarker) {
-        shipMarker = L.marker([lat, lng], { icon: shipIcon, zIndexOffset: 1000 }).addTo(map);
-        shipMarker.bindTooltip("<b>🚢 My Vessel (Live GPS)</b>", { direction: 'top', offset: [0, -12] });
-        map.panTo([lat, lng]);
-      } else {
-        shipMarker.setLatLng([lat, lng]);
-      }
-
-      // Rotate ship wrapper based on GPS heading or calculated bearing
-      let rot = heading;
-      if (heading === 0 && lastLat !== null && lastLng !== null) {
-        rot = calcBearing(lastLat, lastLng, lat, lng);
-      }
-      const wrapper = document.getElementById('ship-svg-wrapper');
-      if (wrapper) {
-        wrapper.style.transform = `rotate(${rot}deg)`;
-      }
-
-      lastLat = lat;
-      lastLng = lng;
-    }
-
-    function centerOnShip() {
-      if (shipMarker) {
-        map.panTo(shipMarker.getLatLng());
-      } else {
-        alert("GPS position not acquired yet. Start tracking first.");
-      }
-    }
-
     // Feature group to hold custom drawn hazard polygons
     const drawnHazardsGroup = new L.FeatureGroup().addTo(map);
 
@@ -344,7 +208,7 @@
     map.on(L.Draw.Event.EDITED, updateRoute);
     map.on(L.Draw.Event.DELETED, updateRoute);
 
-    // Detailed Firth of Clyde Shipping Lanes & Commercial Channels
+    // Preset Shipping Lanes & Hazard Zones
     const shippingLanesData = [
       {
         name: "Clyde Deepwater Channel / TSS",
@@ -358,222 +222,87 @@
           [55.89, -4.86],
           [55.94, -4.81]
         ]
-      },
-      {
-        name: "Faslane / Loch Long Submarine Approach Corridor",
-        coords: [
-          [56.03, -4.84],
-          [55.98, -4.86],
-          [55.97, -4.89],
-          [55.98, -4.91],
-          [56.03, -4.87]
-        ]
-      },
-      {
-        name: "Hunterston Deepwater Iron Ore / Coal Channel",
-        coords: [
-          [55.77, -4.89],
-          [55.75, -4.88],
-          [55.73, -4.89],
-          [55.72, -4.93],
-          [55.74, -4.94],
-          [55.78, -4.91]
-        ]
       }
     ];
 
-    // Detailed Firth of Clyde Hydrographic Hazard Zones & Reefs
     const hazardZonesData = [
       {
-        name: "Gantocks Reef Shallow (< 2.5m)",
+        name: "Gantocks Reef Shallow (< 4m)",
         coords: [
-          [55.956, -4.913],
-          [55.949, -4.898],
-          [55.943, -4.911],
-          [55.953, -4.920]
+          [55.955, -4.912],
+          [55.950, -4.900],
+          [55.945, -4.910],
+          [55.952, -4.918]
         ]
       },
       {
-        name: "Toward Point Ledges & Shoal (< 3.0m)",
+        name: "Toward Point Reef",
         coords: [
-          [55.867, -4.987],
-          [55.856, -4.968],
-          [55.849, -4.983],
-          [55.861, -4.998]
+          [55.865, -4.985],
+          [55.858, -4.970],
+          [55.852, -4.982],
+          [55.860, -4.995]
         ]
       },
       {
-        name: "Skelmorlie Bank Shoal (< 6.5m)",
+        name: "Skelmorlie Bank Shoal (< 8m)",
         coords: [
-          [55.890, -4.899],
-          [55.884, -4.882],
-          [55.873, -4.887],
-          [55.877, -4.904]
-        ]
-      },
-      {
-        name: "Fairlie Spit Shallow Ledge (< 2.0m)",
-        coords: [
-          [55.762, -4.865],
-          [55.757, -4.850],
-          [55.748, -4.857],
-          [55.755, -4.872]
-        ]
-      },
-      {
-        name: "The Eileans Rocks (Millport Harbour Entrance)",
-        coords: [
-          [55.748, -4.926],
-          [55.743, -4.915],
-          [55.739, -4.923],
-          [55.744, -4.933]
-        ]
-      },
-      {
-        name: "Little Cumbrae Island Reef & Broadcar",
-        coords: [
-          [55.722, -4.962],
-          [55.712, -4.942],
-          [55.705, -4.958],
-          [55.715, -4.975]
-        ]
-      },
-      {
-        name: "Bogany Point Foul Ground (Rothesay Approaches)",
-        coords: [
-          [55.852, -5.025],
-          [55.845, -5.012],
-          [55.840, -5.022],
-          [55.848, -5.032]
-        ]
-      },
-      {
-        name: "The Burnt Islands Narrows (Kyles of Bute Shallow < 2.0m)",
-        coords: [
-          [55.878, -5.185],
-          [55.874, -5.176],
-          [55.870, -5.182],
-          [55.875, -5.192]
-        ]
-      },
-      {
-        name: "Inchmarnock Shelf & Foul Area",
-        coords: [
-          [55.795, -5.165],
-          [55.783, -5.148],
-          [55.772, -5.162],
-          [55.785, -5.180]
-        ]
-      },
-      {
-        name: "Holy Island Ledges & Clauchlands Point Ledge",
-        coords: [
-          [55.538, -5.068],
-          [55.528, -5.050],
-          [55.505, -5.055],
-          [55.518, -5.080]
-        ]
-      },
-      {
-        name: "Pladda Island Reefs & Sound Shallow",
-        coords: [
-          [55.428, -5.128],
-          [55.418, -5.110],
-          [55.410, -5.122],
-          [55.422, -5.138]
-        ]
-      },
-      {
-        name: "Iron Rock Ledges (South Arran)",
-        coords: [
-          [55.442, -5.245],
-          [55.435, -5.230],
-          [55.428, -5.242],
-          [55.438, -5.258]
-        ]
-      },
-      {
-        name: "Lady Isle Reefs & Outlying Rocks",
-        coords: [
-          [55.532, -4.738],
-          [55.522, -4.720],
-          [55.512, -4.730],
-          [55.525, -4.748]
-        ]
-      },
-      {
-        name: "Irvine Bar Shoal (< 1.5m)",
-        coords: [
-          [55.610, -4.712],
-          [55.602, -4.700],
-          [55.595, -4.710],
-          [55.605, -4.722]
-        ]
-      },
-      {
-        name: "Ayr Harbour North Spit & Bar",
-        coords: [
-          [55.472, -4.648],
-          [55.465, -4.638],
-          [55.458, -4.645],
-          [55.468, -4.658]
-        ]
-      },
-      {
-        name: "Turnberry Point Reef & Outlying Ledges",
-        coords: [
-          [55.332, -4.855],
-          [55.322, -4.840],
-          [55.315, -4.850],
-          [55.325, -4.868]
+          [55.888, -4.898],
+          [55.885, -4.885],
+          [55.875, -4.888],
+          [55.878, -4.902]
         ]
       }
     ];
 
     // Detailed Firth of Clyde Hydrographic Depth Soundings
     const clydeDepthData = [
+      // Upper Firth & Loch Long / Holy Loch Entrance
       { name: "Tail of the Bank Outer", lat: 55.968, lng: -4.755, depth: 18.0 },
       { name: "Gourock Bay Anchorage", lat: 55.960, lng: -4.815, depth: 12.0 },
       { name: "Cloch Point Deep", lat: 55.972, lng: -4.881, depth: 55.0 },
       { name: "Holy Loch Entrance", lat: 55.978, lng: -4.900, depth: 15.5 },
       { name: "Dunoon Roads", lat: 55.945, lng: -4.915, depth: 38.0 },
-      { name: "Gantocks Reef (Shallow Warning)", lat: 55.952, lng: -4.905, depth: 2.2 },
+      { name: "Gantocks Reef (Shallow Warning)", lat: 55.952, lng: -4.905, depth: 3.2 },
       { name: "Innellan Shore Sounding", lat: 55.895, lng: -4.945, depth: 14.0 },
-      { name: "Toward Point Reef", lat: 55.860, lng: -4.980, depth: 2.8 },
-      { name: "Skelmorlie Bank Shoal", lat: 55.881, lng: -4.892, depth: 6.5 },
+      { name: "Toward Point Reef", lat: 55.860, lng: -4.980, depth: 4.8 },
+
+      // Mid Firth, Largs, Cumbrae & Rothesay
+      { name: "Skelmorlie Bank Shoal", lat: 55.881, lng: -4.892, depth: 8.5 },
       { name: "Wemyss Bay Anchorage", lat: 55.885, lng: -4.910, depth: 22.0 },
       { name: "Rothesay Bay Approach", lat: 55.845, lng: -5.040, depth: 16.0 },
-      { name: "Bogany Point Light Offing", lat: 55.848, lng: -5.020, depth: 4.1 },
-      { name: "Burnt Islands Narrows", lat: 55.875, lng: -5.180, depth: 1.8 },
+      { name: "Bogany Point Light Offing", lat: 55.848, lng: -5.020, depth: 7.1 },
+      { name: "Kyles of Bute Entrance", lat: 55.875, lng: -5.180, depth: 5.2 },
       { name: "Largs Channel Fairway", lat: 55.795, lng: -4.875, depth: 18.0 },
-      { name: "Fairlie Spit Ledge", lat: 55.758, lng: -4.860, depth: 2.0 },
       { name: "Fairlie Roads Outer", lat: 55.755, lng: -4.855, depth: 11.5 },
       { name: "Fairlie Channel Deep", lat: 55.762, lng: -4.864, depth: 24.0 },
-      { name: "Millport Bay Eileans Rocks", lat: 55.744, lng: -4.922, depth: 1.5 },
+      { name: "Millport Bay Shoal", lat: 55.748, lng: -4.920, depth: 6.2 },
       { name: "Off Great Cumbrae West", lat: 55.765, lng: -4.930, depth: 31.0 },
-      { name: "Little Cumbrae Broadcar Reef", lat: 55.715, lng: -4.955, depth: 3.5 },
+      { name: "Little Cumbrae Sounding", lat: 55.715, lng: -4.950, depth: 36.0 },
       { name: "Garroch Head Offing", lat: 55.710, lng: -5.030, depth: 48.0 },
+
+      // Loch Fyne Entrance & Inchmarnock
       { name: "Inchmarnock Deep Trench", lat: 55.780, lng: -5.150, depth: 82.0 },
       { name: "Tarbert Approaches (Loch Fyne)", lat: 55.880, lng: -5.380, depth: 24.0 },
       { name: "Skipness Point Channel", lat: 55.760, lng: -5.330, depth: 52.0 },
+
+      // Arran Coast & Kilbrannan Sound
       { name: "Brodick Bay Outer Deep", lat: 55.575, lng: -5.110, depth: 42.0 },
       { name: "Lamlash Harbour North Channel", lat: 55.535, lng: -5.080, depth: 14.0 },
-      { name: "Clauchlands Point Ledge", lat: 55.530, lng: -5.060, depth: 3.0 },
       { name: "Lamlash Harbour Inner", lat: 55.528, lng: -5.110, depth: 18.5 },
       { name: "Lamlash South Entrance", lat: 55.515, lng: -5.085, depth: 22.0 },
-      { name: "Holy Island Ledges (Shallow)", lat: 55.510, lng: -5.060, depth: 2.2 },
-      { name: "Pladda Island Reef", lat: 55.420, lng: -5.120, depth: 3.5 },
-      { name: "Iron Rock Ledges", lat: 55.435, lng: -5.245, depth: 2.8 },
+      { name: "Holy Island Ledges (Shallow)", lat: 55.510, lng: -5.060, depth: 4.2 },
+      { name: "Pladda Island Reef", lat: 55.420, lng: -5.120, depth: 5.5 },
       { name: "Kilbrannan Sound Central Trench", lat: 55.600, lng: -5.380, depth: 110.0 },
       { name: "Kilbrannan Sound South", lat: 55.500, lng: -5.350, depth: 98.0 },
       { name: "Campbeltown Loch Approach", lat: 55.420, lng: -5.530, depth: 11.0 },
-      { name: "Irvine Bar Shoal", lat: 55.602, lng: -4.710, depth: 1.5 },
-      { name: "Lady Isle Outlying Rocks", lat: 55.522, lng: -4.730, depth: 2.5 },
+
+      // Ayrshire Coast & Outer Firth
+      { name: "Irvine Bay Coastal Waters", lat: 55.602, lng: -4.750, depth: 4.5 },
       { name: "Troon Harbour Approach", lat: 55.545, lng: -4.685, depth: 6.8 },
-      { name: "Ayr Harbour North Bar", lat: 55.465, lng: -4.645, depth: 2.0 },
       { name: "Ayr Bay Outer Roads", lat: 55.470, lng: -4.660, depth: 12.0 },
-      { name: "Turnberry Point Reef", lat: 55.325, lng: -4.855, depth: 2.9 },
-      { name: "Girvan Bank Shoal", lat: 55.245, lng: -4.880, depth: 4.2 },
+      { name: "Turnberry Point Offing", lat: 55.325, lng: -4.850, depth: 28.0 },
+      { name: "Girvan Bank Shoal", lat: 55.245, lng: -4.880, depth: 8.2 },
       { name: "Ailsa Craig Trench", lat: 55.260, lng: -5.120, depth: 68.0 },
       { name: "Sanda Island Sounding", lat: 55.270, lng: -5.580, depth: 45.0 }
     ];
@@ -582,6 +311,7 @@
     let presetHazardLayerGroup = L.layerGroup().addTo(map);
     let depthLayerGroup = L.layerGroup().addTo(map);
 
+    // Render Hydrographic Depth Soundings
     clydeDepthData.forEach(pt => {
       const isShallow = pt.depth < 10.0;
       const depthIcon = L.divIcon({
@@ -596,6 +326,7 @@
         .addTo(depthLayerGroup);
     });
 
+    // Render Preset Polygons
     shippingLanesData.forEach(lane => {
       L.polygon(lane.coords, {
         color: '#a855f7',
@@ -625,6 +356,7 @@
       if (showDepths) map.addLayer(depthLayerGroup); else map.removeLayer(depthLayerGroup);
     }
 
+    // Line intersection geometry check
     function linesIntersect(p1, p2, p3, p4) {
       function ccw(A, B, C) {
         return (C.lat - A.lat) * (B.lng - A.lng) > (B.lat - A.lat) * (C.lng - A.lng);
@@ -695,21 +427,6 @@
       return { ddm: `${latStr} | ${lngStr}`, latStr, lngStr };
     }
 
-    function formatETA(startTimeStr, cumulativeHours) {
-      if (!startTimeStr) return '-';
-      const [h, m] = startTimeStr.split(':').map(Number);
-      let totalMinutes = (h * 60 + m) + Math.round(cumulativeHours * 60);
-      
-      let days = Math.floor(totalMinutes / 1440);
-      let minsInDay = totalMinutes % 1440;
-      let hours = Math.floor(minsInDay / 60);
-      let mins = minsInDay % 60;
-      
-      let timeFormatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-      if (days > 0) timeFormatted += ` (+${days}d)`;
-      return timeFormatted;
-    }
-
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
       const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -770,7 +487,6 @@
       const coords = markers.map(m => m.getLatLng());
       polyline.setLatLngs(coords);
 
-      const startTimeStr = document.getElementById('start-time').value || '08:00';
       const stw = parseFloat(document.getElementById('stw').value) || 6.0;
       const setDir = parseFloat(document.getElementById('set-dir').value) || 0;
       const driftSpd = parseFloat(document.getElementById('drift-spd').value) || 0;
@@ -791,7 +507,6 @@
 
         let legInfo = '';
         let warningHtml = '';
-        let timeLabel = (i === 0) ? `ETD: <b>${startTimeStr}</b>` : '';
 
         if (i > 0) {
           const prev = coords[i - 1];
@@ -803,7 +518,6 @@
 
           totalDist += dist;
           totalTimeHours += legTime;
-          timeLabel = `ETA: <b>${formatETA(startTimeStr, totalTimeHours)}</b>`;
 
           const warnings = getLegWarnings(prev, pt);
           if (warnings.length > 0) {
@@ -821,10 +535,7 @@
         const li = document.createElement('li');
         li.className = 'waypoint-item';
         li.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>WP${i + 1}</strong>
-            <span style="font-size:0.8rem; color:#38bdf8;">${timeLabel}</span>
-          </div>
+          <strong>WP${i + 1}</strong>
           <div class="coord-primary">${ddm}</div>
           <div class="coord-secondary">Dec: ${decDeg}</div>
           ${legInfo}
@@ -843,7 +554,6 @@
     function generatePassagePlan() {
       if (markers.length === 0) return alert("Plot at least two waypoints before generating a passage plan.");
 
-      const startTimeStr = document.getElementById('start-time').value || '08:00';
       const stw = parseFloat(document.getElementById('stw').value) || 6.0;
       const setDir = parseFloat(document.getElementById('set-dir').value) || 0;
       const driftSpd = parseFloat(document.getElementById('drift-spd').value) || 0;
@@ -856,8 +566,6 @@
       coords.forEach((pt, i) => {
         const { ddm } = toDDM(pt.lat, pt.lng);
         let distStr = '-', trackStr = '-', ctsStr = '-', sogStr = '-', durationStr = '-', cumDistStr = '0.00 NM';
-        let timeHeader = (i === 0) ? `ETD ${startTimeStr}` : formatETA(startTimeStr, 0);
-        let tideInfoStr = `${String(setDir).padStart(3, '0')}°T @ ${driftSpd.toFixed(1)} kn`;
         let notesStr = '';
 
         if (i > 0) {
@@ -869,7 +577,6 @@
 
           totalDist += dist;
           totalTimeHours += legTime;
-          timeHeader = formatETA(startTimeStr, totalTimeHours);
 
           const h = Math.floor(legTime);
           const m = Math.round((legTime - h) * 60);
@@ -890,20 +597,154 @@
         rowsHtml += `
           <tr>
             <td style="text-align:center;"><strong>WP${i + 1}</strong></td>
-            <td style="text-align:center; font-weight:bold; color:#0284c7;">${timeHeader}</td>
             <td style="font-family:monospace;">${ddm}</td>
             <td style="text-align:center;">${distStr}</td>
             <td style="text-align:center;">${trackStr}</td>
             <td style="text-align:center; font-weight:bold;">${ctsStr}</td>
             <td style="text-align:center;">${sogStr}</td>
-            <td style="text-align:center; font-size:8.5pt;">${tideInfoStr}</td>
             <td style="text-align:center;">${durationStr}</td>
             <td style="text-align:center;">${cumDistStr}</td>
-            <td style="width:20%;">${notesStr}</td>
+            <td style="width:25%;">${notesStr}</td>
           </tr>
         `;
       });
+
+      const totH = Math.floor(totalTimeHours);
+      const totM = Math.round((totalTimeHours - totH) * 60);
+
+      const planHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Passage Plan Sheet</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; color: #000; background: #fff; }
+            h1 { font-size: 16pt; margin-bottom: 4px; border-bottom: 2px solid #000; padding-bottom: 4px; }
+            .meta-box { display: flex; justify-content: space-between; margin-bottom: 12px; padding: 8px 10px; border: 1px solid #000; font-size: 9.5pt; line-height: 1.4; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 9pt; }
+            th, td { border: 1px solid #000; padding: 5px 6px; text-align: left; }
+            th { background-color: #e5e7eb; font-weight: bold; text-align: center; }
+            .btn-print { padding: 4px 10px; font-size: 8.5pt; font-weight: bold; cursor: pointer; background: #0284c7; color: #fff; border: none; border-radius: 3px; margin-bottom: 10px; }
+            @media print { .btn-print { display: none; } }
+          </style>
+        </head>
+        <body>
+          <button class="btn-print" onclick="window.print()">🖨️ Print</button>
+          <h1>PASSAGE PLAN & NAVIGATIONAL LOG SHEET</h1>
+          <div class="meta-box">
+            <div>
+              <p><strong>Date Plotted:</strong> ${new Date().toLocaleDateString()}</p>
+              <p><strong>Assumed STW:</strong> ${stw} knots</p>
+            </div>
+            <div>
+              <p><strong>Tidal Stream (Set/Drift):</strong> ${setDir}°T @ ${driftSpd} knots</p>
+              <p><strong>Total Distance:</strong> ${totalDist.toFixed(2)} NM</p>
+            </div>
+            <div>
+              <p><strong>Total Est. Passage Time:</strong> ${totH} hours ${totM} mins</p>
+              <p><strong>Total Waypoints:</strong> ${coords.length}</p>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>WP</th>
+                <th>Position (DD° MM.mmm')</th>
+                <th>Leg Dist</th>
+                <th>Track</th>
+                <th>CTS</th>
+                <th>SOG</th>
+                <th>Leg Time</th>
+                <th>Cum. Dist</th>
+                <th>Visual Aids / Hazards / Watch Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const win = window.open('', '_blank');
+      win.document.write(planHtml);
+      win.document.close();
     }
+
+    async function fetchLiveTide(lat, lng, idx) {
+      try {
+        const res = await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=ocean_current_velocity,ocean_current_direction`);
+        const data = await res.json();
+        if (data && data.hourly) {
+          const velKnots = ( (data.hourly.ocean_current_velocity[0] || 0) * 1.94384 ).toFixed(1);
+          const dir = Math.round(data.hourly.ocean_current_direction[0] || 0);
+
+          document.getElementById('set-dir').value = dir;
+          document.getElementById('drift-spd').value = velKnots;
+          updateRoute();
+          alert(`Updated Tide for WP${idx + 1}:\nSet: ${dir}°T\nDrift: ${velKnots} knots`);
+        }
+      } catch (err) {
+        alert("Unable to fetch live current data for this location.");
+      }
+    }
+
+    function undoLast() {
+      if (markers.length === 0) return;
+      map.removeLayer(markers.pop());
+      updateRoute();
+    }
+
+    function clearAll() {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+      updateRoute();
+    }
+
+    function exportGPX() {
+      if (markers.length === 0) return alert("Plot waypoints before exporting.");
+      let gpx = `<?xml version="1.0"?><gpx version="1.1" creator="OpenSeaMap Plotter"><rte><name>Marine Course</name>`;
+      markers.forEach((m, idx) => {
+        const { lat, lng } = m.getLatLng();
+        const { latStr, lngStr } = toDDM(lat, lng);
+        gpx += `<rtept lat="${lat}" lon="${lng}"><name>WP${idx + 1}</name><cmt>${latStr} ${lngStr}</cmt></rtept>`;
+      });
+      gpx += `</rte></gpx>`;
+
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
+      a.download = `marine_route.gpx`;
+      a.click();
+    }
+
+    function importGPX(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
+        const points = xmlDoc.querySelectorAll("rtept, trkpt, wpt");
+        if (!points.length) return alert("No valid points found in GPX.");
+        clearAll();
+        const bounds = [];
+        points.forEach(pt => {
+          const lat = parseFloat(pt.getAttribute("lat"));
+          const lng = parseFloat(pt.getAttribute("lon"));
+          if (!isNaN(lat) && !isNaN(lng)) {
+            addWaypoint(lat, lng);
+            bounds.push([lat, lng]);
+          }
+        });
+        if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
+      };
+      reader.readAsText(file);
+    }
+
+    map.on('click', (e) => {
+      addWaypoint(e.latlng.lat, e.latlng.lng);
+    });
   </script>
 </body>
 </html>
