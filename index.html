@@ -72,6 +72,11 @@
       border-color: #ef4444;
       color: #fca5a5;
     }
+
+    /* Ship Marker Icon Rotation */
+    .ship-icon-container {
+      transition: transform 0.3s ease-out;
+    }
   </style>
 </head>
 <body>
@@ -79,6 +84,17 @@
   <div id="sidebar">
     <h2>Course Plotter & Navigation</h2>
     
+    <!-- GPS Telemetry -->
+    <h3>Live GPS Position</h3>
+    <div class="panel">
+      <p>Position: <span id="gps-pos">Waiting for fix...</span></p>
+      <p>SOG: <span id="gps-sog">0.0 kn</span> | COG: <span id="gps-cog">0°T</span></p>
+      <div class="btn-group" style="margin-top:0.4rem;">
+        <button class="success btn-sm" onclick="toggleGPS()" id="gps-toggle-btn">🟢 Start GPS Tracking</button>
+        <button class="secondary btn-sm" onclick="centerOnShip()">🎯 Center Map</button>
+      </div>
+    </div>
+
     <!-- Route Telemetry -->
     <div class="panel">
       <p>Total Distance: <span id="total-dist">0.00 NM</span></p>
@@ -171,6 +187,104 @@
     let markers = [];
     let polyline = L.polyline([], { color: '#0284c7', weight: 4, dashArray: '6, 8' }).addTo(map);
 
+    // GPS & Live Ship Position State
+    let watchId = null;
+    let isTrackingGPS = false;
+    let shipMarker = null;
+    let lastLat = null;
+    let lastLng = null;
+
+    // Create custom SVG ship icon
+    const shipSvgHtml = `
+      <div class="ship-icon-container" id="ship-svg-wrapper" style="transform: rotate(0deg);">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L4 20L12 16L20 20L12 2Z" fill="#0284c7" stroke="#f8fafc" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </div>
+    `;
+    const shipIcon = L.divIcon({
+      className: '',
+      html: shipSvgHtml,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18]
+    });
+
+    function toggleGPS() {
+      const btn = document.getElementById('gps-toggle-btn');
+      if (!isTrackingGPS) {
+        if (!navigator.geolocation) {
+          alert("Geolocation is not supported by your browser.");
+          return;
+        }
+        btn.innerText = "🔴 Stop GPS Tracking";
+        btn.style.background = "#dc2626";
+        isTrackingGPS = true;
+
+        watchId = navigator.geolocation.watchPosition(
+          position => updateShipPosition(position),
+          error => {
+            console.error(error);
+            alert("Error obtaining GPS position: " + error.message);
+          },
+          { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+        );
+      } else {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        btn.innerText = "🟢 Start GPS Tracking";
+        btn.style.background = "#16a34a";
+        isTrackingGPS = false;
+        if (shipMarker) {
+          map.removeLayer(shipMarker);
+          shipMarker = null;
+        }
+        document.getElementById('gps-pos').innerText = "Tracking stopped";
+        document.getElementById('gps-sog').innerText = "0.0 kn";
+        document.getElementById('gps-cog').innerText = "0°T";
+      }
+    }
+
+    function updateShipPosition(position) {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const speedMs = position.coords.speed; // meters per second
+      const speedKnots = speedMs !== null ? (speedMs * 1.94384).toFixed(1) : '0.0';
+      const heading = position.coords.heading !== null ? position.coords.heading : 0;
+
+      const { ddm } = toDDM(lat, lng);
+      document.getElementById('gps-pos').innerText = ddm;
+      document.getElementById('gps-sog').innerText = `${speedKnots} kn`;
+      document.getElementById('gps-cog').innerText = `${Math.round(heading)}°T`;
+
+      if (!shipMarker) {
+        shipMarker = L.marker([lat, lng], { icon: shipIcon, zIndexOffset: 1000 }).addTo(map);
+        shipMarker.bindTooltip("<b>🚢 My Vessel (Live GPS)</b>", { direction: 'top', offset: [0, -12] });
+        map.panTo([lat, lng]);
+      } else {
+        shipMarker.setLatLng([lat, lng]);
+      }
+
+      // Rotate ship wrapper based on GPS heading or calculated bearing
+      let rot = heading;
+      if (heading === 0 && lastLat !== null && lastLng !== null) {
+        rot = calcBearing(lastLat, lastLng, lat, lng);
+      }
+      const wrapper = document.getElementById('ship-svg-wrapper');
+      if (wrapper) {
+        wrapper.style.transform = `rotate(${rot}deg)`;
+      }
+
+      lastLat = lat;
+      lastLng = lng;
+    }
+
+    function centerOnShip() {
+      if (shipMarker) {
+        map.panTo(shipMarker.getLatLng());
+      } else {
+        alert("GPS position not acquired yet. Start tracking first.");
+      }
+    }
+
     // Feature group to hold custom drawn hazard polygons
     const drawnHazardsGroup = new L.FeatureGroup().addTo(map);
 
@@ -252,7 +366,6 @@
 
     // Detailed Firth of Clyde Hydrographic Hazard Zones & Reefs
     const hazardZonesData = [
-      // Upper Firth & Gourock / Dunoon
       {
         name: "Gantocks Reef Shallow (< 2.5m)",
         coords: [
@@ -280,7 +393,6 @@
           [55.877, -4.904]
         ]
       },
-      // Cumbrae Islands, Largs & Fairlie Channel
       {
         name: "Fairlie Spit Shallow Ledge (< 2.0m)",
         coords: [
@@ -308,7 +420,6 @@
           [55.715, -4.975]
         ]
       },
-      // Bute & Kyles of Bute Entrance
       {
         name: "Bogany Point Foul Ground (Rothesay Approaches)",
         coords: [
@@ -336,7 +447,6 @@
           [55.785, -5.180]
         ]
       },
-      // Arran Coastline
       {
         name: "Holy Island Ledges & Clauchlands Point Ledge",
         coords: [
@@ -364,7 +474,6 @@
           [55.438, -5.258]
         ]
       },
-      // Ayrshire Coast
       {
         name: "Lady Isle Reefs & Outlying Rocks",
         coords: [
@@ -776,147 +885,7 @@
           </tr>
         `;
       });
-
-      const totH = Math.floor(totalTimeHours);
-      const totM = Math.round((totalTimeHours - totH) * 60);
-
-      const planHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Passage Plan Sheet</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; color: #000; background: #fff; }
-            h1 { font-size: 16pt; margin-bottom: 4px; border-bottom: 2px solid #000; padding-bottom: 4px; }
-            .meta-box { display: flex; justify-content: space-between; margin-bottom: 12px; padding: 8px 10px; border: 1px solid #000; font-size: 9.5pt; line-height: 1.4; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 8.5pt; }
-            th, td { border: 1px solid #000; padding: 5px 6px; text-align: left; }
-            th { background-color: #e5e7eb; font-weight: bold; text-align: center; }
-            .btn-print { padding: 4px 10px; font-size: 8.5pt; font-weight: bold; cursor: pointer; background: #0284c7; color: #fff; border: none; border-radius: 3px; margin-bottom: 10px; }
-            @media print { .btn-print { display: none; } }
-          </style>
-        </head>
-        <body>
-          <button class="btn-print" onclick="window.print()">🖨️ Print</button>
-          <h1>PASSAGE PLAN & NAVIGATIONAL LOG SHEET</h1>
-          <div class="meta-box">
-            <div>
-              <p><strong>Date Plotted:</strong> ${new Date().toLocaleDateString()}</p>
-              <p><strong>Departure Time (ETD):</strong> ${startTimeStr}</p>
-              <p><strong>Assumed STW:</strong> ${stw} knots</p>
-            </div>
-            <div>
-              <p><strong>Tidal Stream (Set/Drift):</strong> ${setDir}°T @ ${driftSpd} knots</p>
-              <p><strong>Total Distance:</strong> ${totalDist.toFixed(2)} NM</p>
-            </div>
-            <div>
-              <p><strong>Total Est. Passage Time:</strong> ${totH} hours ${totM} mins</p>
-              <p><strong>Est. Finish Time (ETA):</strong> ${formatETA(startTimeStr, totalTimeHours)}</p>
-              <p><strong>Total Waypoints:</strong> ${coords.length}</p>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>WP</th>
-                <th>Time (ETD/ETA)</th>
-                <th>Position (DD° MM.mmm')</th>
-                <th>Leg Dist</th>
-                <th>Track</th>
-                <th>CTS</th>
-                <th>SOG</th>
-                <th>Pred. Tide / Current</th>
-                <th>Leg Time</th>
-                <th>Cum. Dist</th>
-                <th>Visual Aids / Hazards / Watch Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-        </body>
-        </html>
-      `;
-
-      const win = window.open('', '_blank');
-      win.document.write(planHtml);
-      win.document.close();
     }
-
-    async function fetchLiveTide(lat, lng, idx) {
-      try {
-        const res = await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=ocean_current_velocity,ocean_current_direction`);
-        const data = await res.json();
-        if (data && data.hourly) {
-          const velKnots = ( (data.hourly.ocean_current_velocity[0] || 0) * 1.94384 ).toFixed(1);
-          const dir = Math.round(data.hourly.ocean_current_direction[0] || 0);
-
-          document.getElementById('set-dir').value = dir;
-          document.getElementById('drift-spd').value = velKnots;
-          updateRoute();
-          alert(`Updated Tide for WP${idx + 1}:\nSet: ${dir}°T\nDrift: ${velKnots} knots`);
-        }
-      } catch (err) {
-        alert("Unable to fetch live current data for this location.");
-      }
-    }
-
-    function undoLast() {
-      if (markers.length === 0) return;
-      map.removeLayer(markers.pop());
-      updateRoute();
-    }
-
-    function clearAll() {
-      markers.forEach(m => map.removeLayer(m));
-      markers = [];
-      updateRoute();
-    }
-
-    function exportGPX() {
-      if (markers.length === 0) return alert("Plot waypoints before exporting.");
-      let gpx = `<?xml version="1.0"?><gpx version="1.1" creator="OpenSeaMap Plotter"><rte><name>Marine Course</name>`;
-      markers.forEach((m, idx) => {
-        const { lat, lng } = m.getLatLng();
-        const { latStr, lngStr } = toDDM(lat, lng);
-        gpx += `<rtept lat="${lat}" lon="${lng}"><name>WP${idx + 1}</name><cmt>${latStr} ${lngStr}</cmt></rtept>`;
-      });
-      gpx += `</rte></gpx>`;
-
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
-      a.download = `marine_route.gpx`;
-      a.click();
-    }
-
-    function importGPX(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
-        const points = xmlDoc.querySelectorAll("rtept, trkpt, wpt");
-        if (!points.length) return alert("No valid points found in GPX.");
-        clearAll();
-        const bounds = [];
-        points.forEach(pt => {
-          const lat = parseFloat(pt.getAttribute("lat"));
-          const lng = parseFloat(pt.getAttribute("lon"));
-          if (!isNaN(lat) && !isNaN(lng)) {
-            addWaypoint(lat, lng);
-            bounds.push([lat, lng]);
-          }
-        });
-        if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
-      };
-      reader.readAsText(file);
-    }
-
-    map.on('click', (e) => {
-      addWaypoint(e.latlng.lat, e.latlng.lng);
-    });
   </script>
 </body>
 </html>
