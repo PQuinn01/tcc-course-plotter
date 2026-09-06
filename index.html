@@ -195,10 +195,16 @@
     let lastLng = null;
 
     // Create custom SVG ship icon
+// Custom SVG ship icon with Port (Red/Left) and Starboard (Green/Right) hull styling
     const shipSvgHtml = `
       <div class="ship-icon-container" id="ship-svg-wrapper" style="transform: rotate(0deg);">
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L4 20L12 16L20 20L12 2Z" fill="#0284c7" stroke="#f8fafc" stroke-width="1.5" stroke-linejoin="round"/>
+          <!-- Port Side (Red - Left) -->
+          <path d="M12 2 C12 2 4 9 4 17 C4 18.5 7 20 12 20 Z" fill="#ef4444" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/>
+          <!-- Starboard Side (Green - Right) -->
+          <path d="M12 2 C12 2 20 9 20 17 C20 18.5 17 20 12 20 Z" fill="#22c55e" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/>
+          <!-- Centerline / Keel Line -->
+          <line x1="12" y1="2" x2="12" y2="20" stroke="#ffffff" stroke-width="1"/>
         </svg>
       </div>
     `;
