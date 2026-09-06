@@ -892,6 +892,65 @@
         `;
       });
     }
+
+    map.on('click', function(e) {
+      addWaypoint(e.latlng.lat, e.latlng.lng);
+    });
+
+    // 2. ADD THIS: Utility functions for buttons
+    function undoLast() {
+      if (markers.length > 0) {
+        const lastMarker = markers.pop();
+        map.removeLayer(lastMarker);
+        updateRoute();
+      }
+    }
+
+    function clearAll() {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+      updateRoute();
+    }
+
+    function fetchLiveTide(lat, lng, index) {
+      alert(`Fetching tidal current data for WP${index + 1} (${lat.toFixed(4)}, ${lng.toFixed(4)})...`);
+    }
+
+    function generatePassagePlan() {
+      window.print();
+    }
+
+    function exportGPX() {
+      let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="ClydePlotter">\n<rte>\n`;
+      markers.forEach((m, i) => {
+        const pos = m.getLatLng();
+        gpx += `  <rtept lat="${pos.lat}" lon="${pos.lng}"><name>WP${i + 1}</name></rtept>\n`;
+      });
+      gpx += `</rte>\n</gpx>`;
+      
+      const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'passage-plan.gpx';
+      a.click();
+    }
+
+    function importGPX(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(evt.target.result, 'text/xml');
+        const pts = xml.querySelectorAll('rtept, trkpt, wpt');
+        pts.forEach(pt => {
+          const lat = parseFloat(pt.getAttribute('lat'));
+          const lon = parseFloat(pt.getAttribute('lon'));
+          if (!isNaN(lat) && !isNaN(lon)) addWaypoint(lat, lon);
+        });
+      };
+      reader.readAsText(file);
+    }
   </script>
 </body>
 </html>
