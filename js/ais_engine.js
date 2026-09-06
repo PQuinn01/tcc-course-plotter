@@ -166,4 +166,19 @@
     }
 
     // Initialize AIS engine on page load
-    startAISSimulation();
+   // startAISSimulation();
+
+   function connectLiveAISStream(apiKey) {
+  const socket = new WebSocket("wss://stream.aisstream.io/v0/stream");
+  socket.onopen = function () {
+    const subscriptionMessage = {
+      Apikey: apiKey,
+      BoundingBoxes: [[[55.2, -5.6], [56.1, -4.6]]] // Bounding box for Firth of Clyde
+    };
+    socket.send(JSON.stringify(subscriptionMessage));
+  };
+  socket.onmessage = function (event) {
+    const aisMsg = JSON.parse(event.data);
+    // Process PositionReport & ShipStaticData messages into aisTargets array
+  };
+}
