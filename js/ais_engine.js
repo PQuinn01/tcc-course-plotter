@@ -56,12 +56,12 @@
       }
     }
 
-    function startAISSimulation() {
-      renderAISTargets();
-      if (aisUpdateTimer) clearInterval(aisUpdateTimer);
+    //function startAISSimulation() {
+    //  renderAISTargets();
+    //  if (aisUpdateTimer) clearInterval(aisUpdateTimer);
       // Advance AIS positions every 3 seconds
-      aisUpdateTimer = setInterval(updateAISTargetPositions, 3000);
-    }
+    //  aisUpdateTimer = setInterval(updateAISTargetPositions, 3000);
+   // }
 
     function updateAISTargetPositions() {
       if (!showAIS) return;
@@ -166,7 +166,7 @@
     }
 
     // Initialize AIS engine on page load
-   // startAISSimulation();
+   connectLiveAISStream('8cf3533897a873904ccc53e67cf9befe8aeb1e5b');
 
    function connectLiveAISStream(apiKey) {
   const socket = new WebSocket("wss://stream.aisstream.io/v0/stream");
