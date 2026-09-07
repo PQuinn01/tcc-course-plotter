@@ -85,6 +85,16 @@
       <p>Est. Total Time: <span id="total-time">0h 0m</span></p>
     </div>
 
+    <!-- GPS & Position Controls -->
+      <h3>GPS & Position</h3>
+      <div class="panel">
+        <div class="btn-group">
+          <button class="success" onclick="getGPSLocation(false)">📍 Find My Location</button>
+          <button onclick="getGPSLocation(true)">➕ Add GPS Waypoint</button>
+      </div>
+        <p class="draw-instruction" id="gps-status" style="margin-top:0.3rem; color:#38bdf8;">GPS Standby</p>
+      </div>
+
     <!-- Passage Plan Generator Button -->
     <button class="success btn-sm" onclick="generatePassagePlan()">📄 Print Passage Plan</button>
 
@@ -402,6 +412,7 @@
         ]
       }
     ];
+    
 
     // Detailed Firth of Clyde Hydrographic Depth Soundings
     const clydeDepthData = [
