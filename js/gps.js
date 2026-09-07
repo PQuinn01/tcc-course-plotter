@@ -1,7 +1,29 @@
-// Variable to store the live location marker
 let userLocationMarker = null;
 
-// GPS Geolocation Handler
+// Helper to create the Boat L.divIcon with dynamic heading rotation
+function createBoatIcon(headingDegrees = 0) {
+  const heading = (!isNaN(headingDegrees) && headingDegrees !== null) ? headingDegrees : 0;
+
+  return L.divIcon({
+    className: 'boat-gps-marker',
+    html: `
+      <div class="boat-icon-wrapper" style="transform: rotate(${heading}deg);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36" style="filter: drop-shadow(0px 3px 6px rgba(0,0,0,0.6));">
+          <!-- Outer Hull -->
+          <path d="M12 2C15.5 7 17.5 14 16.5 21H7.5C6.5 14 8.5 7 12 2Z" fill="#0284c7" stroke="#ffffff" stroke-width="1.8"/>
+          <!-- Inner Deck -->
+          <path d="M12 5C14 9 15 14 14.5 19H9.5C9 14 10 9 12 5Z" fill="#38bdf8"/>
+          <!-- Cabin / Navigation Light Point -->
+          <circle cx="12" cy="12" r="2" fill="#ffffff"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18]
+  });
+}
+
+// GPS Geolocation Handler using Boat Icon
 function getGPSLocation(addAsWaypoint = false) {
   const statusEl = document.getElementById('gps-status');
 
@@ -18,23 +40,23 @@ function getGPSLocation(addAsWaypoint = false) {
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
       const accuracy = Math.round(position.coords.accuracy);
+      const heading = position.coords.heading; // True heading in degrees if device is moving/compass enabled
 
       map.setView([lat, lng], 13);
 
+      const boatIcon = createBoatIcon(heading);
+
       if (userLocationMarker) {
         userLocationMarker.setLatLng([lat, lng]);
+        userLocationMarker.setIcon(boatIcon);
       } else {
-        userLocationMarker = L.circleMarker([lat, lng], {
-          radius: 9,
-          fillColor: '#0ea5e9',
-          color: '#ffffff',
-          weight: 3,
-          opacity: 1,
-          fillOpacity: 0.85
-        }).addTo(map).bindTooltip("<b>Vessel GPS Position</b>", { permanent: false });
+        userLocationMarker = L.marker([lat, lng], { icon: boatIcon })
+          .addTo(map)
+          .bindTooltip("<b>Vessel Position</b>", { permanent: false, direction: 'top' });
       }
 
-      if (statusEl) statusEl.innerText = `Fix Acquired (Accuracy: ±${accuracy}m)`;
+      const headingText = (heading !== null && !isNaN(heading)) ? ` | Heading: ${Math.round(heading)}°T` : '';
+      if (statusEl) statusEl.innerText = `Fix Acquired (±${accuracy}m)${headingText}`;
 
       if (addAsWaypoint) {
         addWaypoint(lat, lng);

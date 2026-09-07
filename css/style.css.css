@@ -201,3 +201,15 @@ button.danger:hover {
 input[type="file"] {
   display: none;
 }
+
+/* Custom CSS for Leaflet Boat GPS Marker */
+.boat-gps-marker {
+  background: transparent;
+  border: none;
+}
+.boat-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease; /* Smooth rotation transition */
+}
