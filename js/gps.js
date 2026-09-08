@@ -1,5 +1,4 @@
 // Helper to create the Boat L.divIcon with dynamic heading rotation
-// Helper to create the Boat L.divIcon with dynamic heading rotation
 function createBoatIcon(headingDegrees = 0) {
   const heading = (!isNaN(headingDegrees) && headingDegrees !== null) ? headingDegrees : 0;
 
