@@ -1,5 +1,3 @@
-let userLocationMarker = null;
-
 // Helper to create the Boat L.divIcon with dynamic heading rotation
 function createBoatIcon(headingDegrees = 0) {
   const heading = (!isNaN(headingDegrees) && headingDegrees !== null) ? headingDegrees : 0;
@@ -22,6 +20,8 @@ function createBoatIcon(headingDegrees = 0) {
     iconAnchor: [18, 18]
   });
 }
+
+let userLocationMarker = null;
 
 // GPS Geolocation Handler using Boat Icon
 function getGPSLocation(addAsWaypoint = false) {
