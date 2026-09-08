@@ -1,4 +1,5 @@
 // Helper to create the Boat L.divIcon with dynamic heading rotation
+// Helper to create the Boat L.divIcon with dynamic heading rotation
 function createBoatIcon(headingDegrees = 0) {
   const heading = (!isNaN(headingDegrees) && headingDegrees !== null) ? headingDegrees : 0;
 
@@ -13,6 +14,12 @@ function createBoatIcon(headingDegrees = 0) {
           <path d="M12 5C14 9 15 14 14.5 19H9.5C9 14 10 9 12 5Z" fill="#38bdf8"/>
           <!-- Cabin / Navigation Light Point -->
           <circle cx="12" cy="12" r="2" fill="#ffffff"/>
+
+          <!-- Rear Left Red Marker (Port Stern) -->
+          <circle cx="7.5" cy="20.5" r="1.8" fill="#ef4444" stroke="#ffffff" stroke-width="0.6"/>
+
+          <!-- Rear Right Green Marker (Starboard Stern) -->
+          <circle cx="16.5" cy="20.5" r="1.8" fill="#22c55e" stroke="#ffffff" stroke-width="0.6"/>
         </svg>
       </div>
     `,
