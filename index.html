@@ -107,6 +107,16 @@
     <!-- Passage Plan Generator Button -->
     <button class="success btn-sm" onclick="generatePassagePlan()">📄 Print Passage Plan</button>
 
+    <!-- AIS Live Traffic -->
+    <h3>Live AIS Traffic</h3>
+      <div class="panel">
+        <label class="checkbox-row">
+        <input type="checkbox" id="toggle-ais" onchange="toggleAIS(this.checked)" />
+          Enable Live AIS Vessels
+        </label>
+        <p class="draw-instruction" id="ais-status" style="color: #38bdf8;">AIS Inactive</p>
+    </div>
+
     <!-- Map Layers & Safety Controls -->
     <h3>Map Warning Overlays</h3>
     <div class="panel">
