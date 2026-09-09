@@ -1,7 +1,7 @@
 let aisSocket = null;
 const aisTargets = new Map(); // Store active vessel markers by MMSI
 const AIS_STREAM_URL = 'wss://stream.aisstream.io/v0/stream'; 
-const API_KEY = 'YOUR_AISSTREAM_API_KEY'; // Replace with AISStream API key if available
+const API_KEY = 'fd2351962e05075b7a38eb0edd8e332da892b870'; // Replace with AISStream API key if available
 
 // Distinctive SVG vessel shape with directional arrow
 function createVesselIcon(heading = 0) {
